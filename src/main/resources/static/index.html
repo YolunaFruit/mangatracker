@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manga Tracker</title>
+</head>
+<body>
+
+<h2>Manga Search</h2>
+
+<input type="text" id="searchInput" placeholder="Search for a manga...">
+<button onclick="searchManga()">Search</button>
+
+<div id="result"></div>
+
+<script>
+    function searchManga() {
+        const query = document.getElementById("searchInput").value;
+        fetch(`http://localhost:8080/search?title=${encodeURIComponent(query)}`)
+            .then(res => res.json())
+            .then(data => {
+                if (!data || !data.id) {
+                    document.getElementById("result").innerHTML =
+                        "<p>No results found.</p>";
+                    return;
+                }
+
+                document.getElementById("result").innerHTML =
+                    `<h3>${data.title}</h3>
+                     <img src="${data.coverUrl}" style="width:200px"><br><br>
+                     <p>${data.description}</p>
+                     <button onclick="addManga('${data.id}', '${data.title}')">Add to Tracker</button>`;
+            });
+    }
+
+    function addManga(id, title) {
+        fetch(`http://localhost:8080/manga/add?title=${encodeURIComponent(title)}&externalUrl=https://mangadex.org&mangaDexId=${id}`, {
+            method: "POST"
+        })
+            .then(res => res.json())
+            .then(data => alert(`Added: ${data.title} (Chapters: ${data.totalChapters})`));
+    }
+</script>
+
+</body>
+</html>
