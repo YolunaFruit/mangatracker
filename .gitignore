@@ -31,3 +31,18 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Local data, dependencies, secrets and deployment state
+data/
+node_modules/
+.env
+.env.*
+!.env.example
+.vercel/
+.vercel
+.env*
+
+!.env.example
+
+.agents/
+skills-lock.json

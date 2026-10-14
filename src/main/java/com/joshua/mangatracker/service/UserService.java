@@ -6,28 +6,52 @@ import com.joshua.mangatracker.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
+import com.joshua.mangatracker.UrlSafety;
+import com.joshua.mangatracker.service.providers.ProviderId;
 
 @Service
+@Transactional
 public class UserService {
 
     private final UserRepository userRepo;
     private final MangaDexService mangaService;
 
-    public UserService(UserRepository userRepo, MangaDexService mangaService) {
+    private final PasswordEncoder passwords;
+
+    public UserService(UserRepository userRepo, MangaDexService mangaService, PasswordEncoder passwords) {
+        this.passwords = passwords;
         this.userRepo = userRepo;
         this.mangaService = mangaService;
     }
 
     public User register(String username, String password) {
+        username = username == null ? "" : username.trim();
+        if (!username.matches("[A-Za-z0-9_-]{3,40}"))
+            throw new IllegalArgumentException("Use 3–40 letters, numbers, underscores or hyphens for your username.");
+        if (password == null || password.length() < 8 || password.getBytes(StandardCharsets.UTF_8).length > 72)
+            throw new IllegalArgumentException("Use a password of at least 8 characters and at most 72 UTF-8 bytes.");
         User exists = userRepo.findByUsername(username);
         if (exists != null) return null;
-        return userRepo.save(new User(username, password));
+        return userRepo.save(new User(username, passwords.encode(password)));
     }
 
     public User login(String username, String password) {
-        User u = userRepo.findByUsername(username);
-        if (u == null) return null;
-        if (!u.getPassword().equals(password)) return null;
+        if (username == null || password == null || password.getBytes(StandardCharsets.UTF_8).length > 72) return null;
+        User u = userRepo.findByUsername(username.trim());
+        if (u == null || u.getPassword() == null) return null;
+        String stored = u.getPassword();
+        if (stored.startsWith("$2")) {
+            if (!passwords.matches(password, stored)) return null;
+        } else {
+            // Upgrade existing local accounts on their first successful login.
+            if (!MessageDigest.isEqual(stored.getBytes(StandardCharsets.UTF_8), password.getBytes(StandardCharsets.UTF_8))) return null;
+            u.setPassword(passwords.encode(password));
+            userRepo.save(u);
+        }
         return u;
     }
 
@@ -47,8 +71,11 @@ public class UserService {
      * NEW: Add a manga without calling MangaDex (frontend sends title/coverUrl).
      */
     public User addMangaBasic(Long userId, String mangaId, String title, String coverUrl) {
+        ProviderId.parseCompatible(mangaId); // Validate before persisting a provider identifier.
+        if (title == null || title.isBlank() || title.length() > 500)
+            throw new IllegalArgumentException("A manga title of at most 500 characters is required.");
         User u = userRepo.findById(userId).orElse(null);
-        if (u == null) throw new RuntimeException("User not found for id=" + userId);
+        if (u == null) throw new IllegalArgumentException("User not found.");
 
         boolean already = u.getTrackedManga().stream()
                 .anyMatch(x -> x.getMangaId() != null && x.getMangaId().equals(mangaId));
@@ -56,7 +83,7 @@ public class UserService {
 
         String safeTitle = (title == null || title.isBlank()) ? "(untitled)" : title;
 
-        UserManga userManga = new UserManga(mangaId, safeTitle, coverUrl);
+        UserManga userManga = new UserManga(mangaId, safeTitle, UrlSafety.normalizeHttpUrlOrNull(coverUrl));
         userManga.setLastAdded(Instant.now());
         userManga.setLastRead(null);
 

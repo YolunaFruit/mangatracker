@@ -17,7 +17,9 @@ public class UserManga {
     private User user;
 
     private String mangaId;
+    @Column(length = 500)
     private String title;
+    @Column(length = 2048)
     private String coverUrl;
 
     private String source;     // "md" / "mal"

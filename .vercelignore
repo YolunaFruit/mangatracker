@@ -1,0 +1,10 @@
+.git
+.idea
+**/node_modules
+**/build
+target
+data
+.env*
+
+.agents/
+skills-lock.json
