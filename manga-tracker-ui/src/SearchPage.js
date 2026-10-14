@@ -393,7 +393,7 @@ export default function SearchPage({ user }) {
                                             className="home-card"
                                             onClick={() => loadDetails(m.id)}
                                         >
-                                            <img src={safeCover(m.coverUrl)} alt={m.title + " cover"} loading="lazy" onError={event => { event.currentTarget.onerror = null; event.currentTarget.src = NO_COVER; }} />
+                                            <img referrerPolicy="no-referrer" src={safeCover(m.coverUrl)} alt={m.title + " cover"} loading="lazy" onError={event => { event.currentTarget.onerror = null; event.currentTarget.src = NO_COVER; }} />
                                             <div className="home-card-title">{m.title}</div>
                                         </button>
                                     ))}
@@ -412,7 +412,7 @@ export default function SearchPage({ user }) {
                                             className="home-card"
                                             onClick={() => loadDetails(m.id)}
                                         >
-                                            <img src={safeCover(m.coverUrl)} alt={m.title + " cover"} loading="lazy" onError={event => { event.currentTarget.onerror = null; event.currentTarget.src = NO_COVER; }} />
+                                            <img referrerPolicy="no-referrer" src={safeCover(m.coverUrl)} alt={m.title + " cover"} loading="lazy" onError={event => { event.currentTarget.onerror = null; event.currentTarget.src = NO_COVER; }} />
                                             <div className="home-card-title">{m.title}</div>
                                         </button>
                                     ))}
@@ -525,7 +525,7 @@ export default function SearchPage({ user }) {
                                     className="search-result-item"
                                     onClick={() => loadDetails(item.id)}
                                 >
-                                    <img
+                                    <img referrerPolicy="no-referrer"
                                         className="search-result-cover"
                                         src={safeCover(item.coverUrl)}
                                         alt="cover"
@@ -591,7 +591,7 @@ export default function SearchPage({ user }) {
                         ← Back to results
                     </button>
 
-                    <img src={safeCover(result.coverUrl)} alt="cover" />
+                    <img referrerPolicy="no-referrer" src={safeCover(result.coverUrl)} alt="cover" />
 
                     <div className="detail-meta">
                         <h2>{result.title}</h2>

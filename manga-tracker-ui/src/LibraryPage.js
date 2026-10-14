@@ -248,7 +248,7 @@ export default function LibraryPage({ user }) {
                                 <div className={`dot ${hasUpdate ? "on" : ""}`} title={hasUpdate ? "Updates available" : ""} />
 
                                 {viewMode === "expanded" && (
-                                    <img
+                                    <img referrerPolicy="no-referrer"
                                         className="cover"
                                         src={safeCover(m.coverUrl)}
                                         alt="cover"
