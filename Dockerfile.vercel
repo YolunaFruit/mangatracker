@@ -20,4 +20,4 @@ ENV SPRING_PROFILES_ACTIVE=production
 ENV PORT=8080
 EXPOSE 8080
 USER 10001
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=70", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-XX:TieredStopAtLevel=1", "-XX:MaxRAMPercentage=70", "-jar", "/app/app.jar"]
