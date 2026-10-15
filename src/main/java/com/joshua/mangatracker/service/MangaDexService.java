@@ -6,8 +6,6 @@ import com.joshua.mangatracker.dto.MangaSearchResult;
 import com.joshua.mangatracker.service.providers.MangaProvider;
 import com.joshua.mangatracker.service.providers.ProviderId;
 import org.springframework.stereotype.Service;
-import com.joshua.mangatracker.service.providers.MangaProvider;
-import com.joshua.mangatracker.service.providers.ProviderId;
 
 
 import java.net.URI;
@@ -30,7 +28,9 @@ public class MangaDexService implements MangaProvider {
 
     // Performance: caches
     private final Map<String, Optional<String>> coverUrlCache = new ConcurrentHashMap<>();
-    private final Map<String, Integer> chapterCountCache = new ConcurrentHashMap<>();
+    private record ChapterSnapshot(int latest, long expiresAt) {}
+    private final Map<String, ChapterSnapshot> chapterCountCache = new ConcurrentHashMap<>();
+    private final Map<String, String> coverFileNameCache = new ConcurrentHashMap<>();
     private final Map<String, Optional<String>> authorNameCache = new ConcurrentHashMap<>();
 
     // grouped catalog (lazy init)
@@ -90,6 +90,8 @@ public class MangaDexService implements MangaProvider {
     // MangaProvider
     @Override public String key() { return "md"; }
     public String displayName() { return "MangaDex"; }
+    @Override public boolean supportsAdvanced() { return true; }
+    @Override public boolean supportsBrowse() { return true; }
 
 
 
@@ -248,7 +250,7 @@ public class MangaDexService implements MangaProvider {
                 coverUrlCache.put(mangaId, Optional.ofNullable(coverUrl));
             }
 
-            int chapterCount = fetchTotalChapters(mangaId);
+            int chapterCount = Math.max(0, fetchTotalChapters(mangaId));
 
             // author
             String author = "";
@@ -368,13 +370,13 @@ public class MangaDexService implements MangaProvider {
         boolean allowSuggestive = true;
         boolean allowErotica = true;
 
+        Set<String> includedRatings = new HashSet<>();
         List<String> includeReal = new ArrayList<>();
         for (String t : includeTags) {
             if (t == null) continue;
             if (t.startsWith(RATING_PREFIX)) {
                 String v = t.substring(RATING_PREFIX.length()).toLowerCase();
-                if (v.equals("suggestive")) allowSuggestive = true;
-                if (v.equals("erotica")) allowErotica = true;
+                if (v.equals("suggestive") || v.equals("erotica")) includedRatings.add(v);
             } else {
                 includeReal.add(t);
             }
@@ -406,9 +408,11 @@ public class MangaDexService implements MangaProvider {
         }
 
         // ratings
-        sb.append("&contentRating[]=safe");
-        if (allowSuggestive) sb.append("&contentRating[]=suggestive");
-        if (allowErotica) sb.append("&contentRating[]=erotica");
+        if (includedRatings.isEmpty()) sb.append("&contentRating[]=safe");
+        if (allowSuggestive && (includedRatings.isEmpty() || includedRatings.contains("suggestive"))) sb.append("&contentRating[]=suggestive");
+        if (allowErotica && (includedRatings.isEmpty() || includedRatings.contains("erotica"))) sb.append("&contentRating[]=erotica");
+        if (!includedRatings.isEmpty() && !(allowSuggestive && includedRatings.contains("suggestive"))
+                && !(allowErotica && includedRatings.contains("erotica"))) return List.of();
 
         try {
             JsonNode root = getJson(sb.toString());
@@ -619,37 +623,34 @@ public class MangaDexService implements MangaProvider {
 
     // count chapters
     public int fetchTotalChapters(String mangaId) {
-        Integer cached = chapterCountCache.get(mangaId);
-        if (cached != null) return cached;
-
-        int count = computeEnglishChapterCountFromAggregate(mangaId);
-        chapterCountCache.put(mangaId, count);
-        return count;
+        ProviderId id = ProviderId.parseCompatible(mangaId);
+        if (!id.provider.equals("md")) throw new IllegalArgumentException("Expected a MangaDex id.");
+        ChapterSnapshot cached = chapterCountCache.get(id.rawId);
+        if (cached != null && cached.expiresAt() > System.currentTimeMillis()) return cached.latest();
+        try {
+            JsonNode root = getJson(BASE_URL + "/manga/" + id.rawId + "/aggregate?translatedLanguage[]=en");
+            JsonNode volumes = root.path("volumes");
+            if (!volumes.isObject()) return -1;
+            int latest = latestNumberedChapter(volumes);
+            chapterCountCache.put(id.rawId, new ChapterSnapshot(latest, System.currentTimeMillis() + 300000));
+            return latest;
+        } catch (Exception ex) {
+            // Do not cache failed requests as zero, or overwrite a reader's progress.
+            return cached == null ? -1 : cached.latest();
+        }
     }
 
-    private int computeEnglishChapterCountFromAggregate(String mangaId) {
-        try {
-            String url = BASE_URL + "/manga/" + mangaId + "/aggregate?translatedLanguage[]=en";
-            JsonNode root = getJson(url);
-            JsonNode volumes = root.path("volumes");
-            if (!volumes.isObject()) return 0;
-
-            int total = 0;
-            Iterator<Map.Entry<String, JsonNode>> volIt = volumes.fields();
-            while (volIt.hasNext()) {
-                JsonNode chapters = volIt.next().getValue().path("chapters");
-                if (!chapters.isObject()) continue;
-
-                Iterator<String> keys = chapters.fieldNames();
-                while (keys.hasNext()) {
-                    String key = keys.next();
-                    if (key != null && !key.isBlank()) total++;
-                }
+    static int latestNumberedChapter(JsonNode volumes) {
+        double latest = 0;
+        for (JsonNode volume : volumes) {
+            for (JsonNode chapter : volume.path("chapters")) {
+                try {
+                    double number = Double.parseDouble(chapter.path("chapter").asText(""));
+                    if (Double.isFinite(number)) latest = Math.max(latest, number);
+                } catch (NumberFormatException ignored) {}
             }
-            return total;
-        } catch (Exception ignored) {
-            return 0;
         }
+        return (int) Math.min(1000000, Math.ceil(latest));
     }
 
     // helpers
@@ -817,6 +818,12 @@ public class MangaDexService implements MangaProvider {
         Map<String, String> out = new HashMap<>();
         if (coverIds == null || coverIds.isEmpty()) return out;
 
+        List<String> missing = new ArrayList<>();
+        for (String id : coverIds) {
+            String file = coverFileNameCache.get(id);
+            if (file == null) missing.add(id); else out.put(id, file);
+        }
+        coverIds = missing;
         int chunkSize = 60;
         for (int i = 0; i < coverIds.size(); i += chunkSize) {
             List<String> chunk = coverIds.subList(i, Math.min(i + chunkSize, coverIds.size()));
@@ -860,6 +867,12 @@ public class MangaDexService implements MangaProvider {
 
     // HTTP Status checks and response
     private JsonNode getJson(String url) throws Exception {
+        // Expanded relationships eliminate one author/cover request per search result.
+        URI uri = URI.create(url);
+        if (uri.getPath().equals("/manga") || uri.getPath().matches("/manga/[0-9a-f-]{36}")) {
+            url += (url.contains("?") ? "&" : "?") + "includes[]=author&includes[]=cover_art";
+            if (uri.getPath().equals("/manga")) url += "&originalLanguage[]=ja&originalLanguage[]=ko&originalLanguage[]=zh&originalLanguage[]=zh-hk";
+        }
         int maxAttempts = 4;
         long backoffMs = 250;
 
@@ -876,7 +889,11 @@ public class MangaDexService implements MangaProvider {
             int code = res.statusCode();
 
             if (code >= 200 && code < 300) {
-                return objectMapper.readTree(res.body());
+                JsonNode root = objectMapper.readTree(res.body());
+                JsonNode data = root.path("data");
+                if (data.isArray()) for (JsonNode item : data) cacheRelationships(item);
+                else cacheRelationships(data);
+                return root;
             }
 
             boolean retryable = (code == 429) || (code >= 500 && code <= 599);
@@ -889,7 +906,7 @@ public class MangaDexService implements MangaProvider {
             if (retryAfter.isPresent()) {
                 try {
                     long seconds = Long.parseLong(retryAfter.get().trim());
-                    sleepMs = Math.max(sleepMs, seconds * 1000L);
+                    sleepMs = Math.min(5000, Math.max(sleepMs, seconds * 1000L));
                 } catch (NumberFormatException ignored) {}
             }
 
@@ -902,6 +919,21 @@ public class MangaDexService implements MangaProvider {
         }
 
         throw new RuntimeException("Unreachable");
+    }
+
+    private void cacheRelationships(JsonNode item) {
+        if (coverUrlCache.size() > 2000) { coverUrlCache.clear(); coverFileNameCache.clear(); authorNameCache.clear(); }
+        for (JsonNode rel : item.path("relationships")) {
+            String id = rel.path("id").asText("");
+            JsonNode attrs = rel.path("attributes");
+            if (rel.path("type").asText().equals("author") && attrs.hasNonNull("name"))
+                authorNameCache.put(id, Optional.of(attrs.path("name").asText()));
+            if (rel.path("type").asText().equals("cover_art") && attrs.hasNonNull("fileName")) {
+                String file = attrs.path("fileName").asText();
+                coverFileNameCache.put(id, file);
+                coverUrlCache.put(item.path("id").asText(), Optional.of(buildCoverUrl(item.path("id").asText(), file)));
+            }
+        }
     }
 
     private String safeSnippet(String body) {

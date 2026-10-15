@@ -49,7 +49,7 @@ public class MangaSearchAggregatorService {
     }
 
     public MangaSearchResult detailsByPackedId(String packedId) {
-        ProviderId pid = ProviderId.parsePacked(packedId);
+        ProviderId pid = ProviderId.parseCompatible(packedId);
         MangaProvider provider = pOrThrow(pid.provider);
         return provider.details(pid.rawId);
     }
@@ -93,12 +93,24 @@ public class MangaSearchAggregatorService {
         List<MangaSearchResult> pool;
         if (hasFilters && md != null) {
             pool = md.advancedSearch(title, includeTags, excludeTags, sortBy, sortDir, 50);
+        } else if (title == null || title.isBlank()) {
+            pool = browse("trending", 50);
         } else {
-            pool = searchListMerged(title == null ? "" : title, 50);
+            pool = searchListMerged(title, 50);
         }
 
         if (pool == null || pool.isEmpty()) return null;
         return pool.get(new Random().nextInt(pool.size()));
+    }
+
+    public Integer latestChapter(String id) {
+        ProviderId pid = ProviderId.parseCompatible(id);
+        if (pOrThrow(pid.provider) instanceof MangaDexService md) {
+            int latest = md.fetchTotalChapters(pid.rawId);
+            return latest < 0 ? null : latest;
+        }
+        MangaSearchResult details = detailsByPackedId(id);
+        return details == null || details.getChapterCount() <= 0 ? null : details.getChapterCount();
     }
 
     private int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }

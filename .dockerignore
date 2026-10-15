@@ -1,0 +1,12 @@
+.git
+**/.git
+.idea
+**/node_modules
+**/build
+target
+data
+.env*
+.vercel
+
+.agents/
+skills-lock.json

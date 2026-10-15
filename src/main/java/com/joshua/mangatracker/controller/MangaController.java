@@ -6,7 +6,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/manga")
-@CrossOrigin
 public class MangaController {
 
     private final MangaService mangaService;
@@ -15,7 +14,7 @@ public class MangaController {
         this.mangaService = mangaService;
     }
 
-    @GetMapping("/add")
+    @PostMapping("/add")
     public Manga addManga(@RequestParam String title,
                           @RequestParam String externalUrl,
                           @RequestParam String mangaDexId) {

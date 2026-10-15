@@ -1,0 +1,26 @@
+name: App checks
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: manga-tracker-ui/package-lock.json
+      - run: npm ci
+        working-directory: manga-tracker-ui
+      - run: npm test -- --watchAll=false --runInBand
+        working-directory: manga-tracker-ui
+        env:
+          CI: 'true'
+      - run: npm run build
+        working-directory: manga-tracker-ui
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: bash mvnw -B -ntp verify

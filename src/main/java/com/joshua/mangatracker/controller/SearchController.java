@@ -34,7 +34,10 @@ public class SearchController {
 
     @GetMapping("/details")
     public MangaSearchResult details(@RequestParam String id) {
-        return search.detailsByPackedId(id);
+        MangaSearchResult result = search.detailsByPackedId(id);
+        if (result == null) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "Manga details are temporarily unavailable.");
+        return result;
     }
 
     @GetMapping("/tags")
@@ -65,21 +68,13 @@ public class SearchController {
         return search.randomWithFilters(title, includeTags, excludeTags, sortBy, sortDir);
     }
 
-    public static class HomeResponse {
-        public List<MangaSearchResult> trending;
-        public List<MangaSearchResult> newList;
-
-        public HomeResponse(List<MangaSearchResult> trending, List<MangaSearchResult> newList) {
-            this.trending = trending;
-            this.newList = newList;
-        }
-
-        // keep JSON field names matching your frontend expectation
-        public List<MangaSearchResult> getTrending() { return trending; }
-        public List<MangaSearchResult> getNew() { return newList; }
-
-        // if your frontend expects "new", you can rename getter:
-        @com.fasterxml.jackson.annotation.JsonProperty("new")
-        public List<MangaSearchResult> getNewJson() { return newList; }
+    @GetMapping("/chapters")
+    public java.util.Map<String, Object> chapters(@RequestParam String id) {
+        java.util.Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("latestChapter", search.latestChapter(id));
+        return response;
     }
+
+    public record HomeResponse(List<MangaSearchResult> trending,
+                               @com.fasterxml.jackson.annotation.JsonProperty("new") List<MangaSearchResult> newList) {}
 }
